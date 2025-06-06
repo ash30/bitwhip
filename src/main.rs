@@ -10,7 +10,7 @@ use ffmpeg_next::{
 };
 use log::LevelFilter;
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
-use source::Source;
+use source::{CaptureSourceConfig, Source};
 use std::{collections::HashMap, sync::mpsc, time::Instant};
 
 mod client;
@@ -124,10 +124,11 @@ async fn main() -> Result<(), Error> {
 async fn stream(url: String, token: Option<String>) -> Result<()> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
+    let config = CaptureSourceConfig::default();
     let join_handle = tokio::task::spawn_blocking(move || -> Result<()> {
         let mut encoder: Option<Encoder> = None;
-        let mut source: Box<dyn Source + Send + Sync> =
-            Box::new(source::dxdup::DisplayDuplicator::new()?);
+        let mut source = source::init_source(&config)?;
+        //Box::new(source::dxdup::DisplayDuplicator::new()?);
 
         let ensure_encoder = |encoder: &mut Option<Encoder>,
                               width: u32,
