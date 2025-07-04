@@ -6,6 +6,9 @@ use ffmpeg_next::{frame::video::Video, Packet};
 #[cfg(target_os = "windows")]
 mod dxdup;
 
+#[cfg(target_os = "macos")]
+mod avfoundation;
+
 // ==========
 
 pub struct EncodedPacket(pub Packet, pub Instant);
