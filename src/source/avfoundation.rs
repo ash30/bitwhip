@@ -20,8 +20,6 @@ pub struct AFScreenCapturer {
     decoder: VideoDecoder,
     encoder: Encoder,
     convertor: Convertor,
-
-    test: Option<Frame>,
 }
 
 impl AFScreenCapturer {
@@ -65,7 +63,6 @@ impl AFScreenCapturer {
             decoder,
             encoder,
             convertor,
-            test: None,
         })
     }
 }
