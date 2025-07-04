@@ -18,7 +18,11 @@ pub fn render_video(rx: mpsc::Receiver<ffmpeg_next::frame::Video>) {
             let mut event_pump = sdl_context.event_pump().unwrap();
             let texture_creator = canvas.texture_creator();
             let mut texture = texture_creator
-                .create_texture_streaming(PixelFormatEnum::IYUV, first_frame.width(), first_frame.height())
+                .create_texture_streaming(
+                    PixelFormatEnum::IYUV,
+                    first_frame.width(),
+                    first_frame.height(),
+                )
                 .map_err(|e| e.to_string())
                 .expect("No error");
 
@@ -32,7 +36,6 @@ pub fn render_video(rx: mpsc::Receiver<ffmpeg_next::frame::Video>) {
                 );
             };
 
-
             'running: loop {
                 for event in event_pump.poll_iter() {
                     match event {
@@ -45,32 +48,33 @@ pub fn render_video(rx: mpsc::Receiver<ffmpeg_next::frame::Video>) {
                     }
                 }
 
-                texture
+                let res = texture
                     .with_lock(None, |buffer: &mut [u8], _pitch: usize| {
                         match rx.try_recv() {
-                            Ok(frame) => {
-                                unsafe {
-                                    let frame_ptr = *frame.as_ptr();
-                                    ffmpeg_sys_next::av_image_copy_to_buffer(
-                                        buffer.as_mut_ptr(),
-                                        buffer_size,
-                                        frame_ptr.data.as_ptr() as *mut _,
-                                        frame_ptr.linesize.as_ptr() as *mut _,
-                                        frame.format().into(),
-                                        frame_ptr.width,
-                                        frame_ptr.height,
-                                        32,
-                                    );
-                                }
-                            }
-                            Err(_err) => {}
+                            Ok(frame) => unsafe {
+                                let frame_ptr = *frame.as_ptr();
+                                ffmpeg_sys_next::av_image_copy_to_buffer(
+                                    buffer.as_mut_ptr(),
+                                    buffer_size,
+                                    frame_ptr.data.as_ptr() as *mut _,
+                                    frame_ptr.linesize.as_ptr() as *mut _,
+                                    frame.format().into(),
+                                    frame_ptr.width,
+                                    frame_ptr.height,
+                                    32,
+                                );
+                                true
+                            },
+                            Err(_err) => false,
                         }
                     })
-                .expect("texture copy");
+                    .expect("texture copy");
 
-                canvas.clear();
-                canvas.copy(&texture, None, None).expect("No error");
-                canvas.present();
+                if res {
+                    canvas.clear();
+                    canvas.copy(&texture, None, None).expect("No error");
+                    canvas.present();
+                }
             }
         }
         Err(_err) => {}
