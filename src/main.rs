@@ -121,41 +121,20 @@ async fn main() -> Result<(), Error> {
 async fn stream(url: String, token: Option<String>) -> Result<()> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
-    let config = CaptureSourceConfig::default();
     let join_handle = tokio::task::spawn_blocking(move || -> Result<()> {
-        let mut encoder: Option<Encoder> = None;
-        let mut source = source::init_source(&config)?;
-        //Box::new(source::dxdup::DisplayDuplicator::new()?);
-
-        let ensure_encoder = |encoder: &mut Option<Encoder>,
-                              width: u32,
-                              height: u32,
-                              hw_frames: *mut AVBufferRef|
-         -> Result<()> {
-            if let Some(enc) = encoder {
-                if enc.dimensions() != (width, height) {
-                    encoder.replace(create_encoder(width, height, hw_frames)?);
-                }
-            } else {
-                encoder.replace(create_encoder(width, height, hw_frames)?);
-            }
-
-            Ok(())
-        };
-        let start = Instant::now();
+        let mut source = init_capture_source(source::CaptureSource::AVFoundation)?;
         loop {
-            // Pull frame from duplicator
-            let frame = source.get_frame()?;
-            let hw_frames = unsafe { (*frame.as_ptr()).hw_frames_ctx };
-            // Fetch encoder or create it
-            ensure_encoder(&mut encoder, frame.width(), frame.height(), hw_frames)?;
-            if let Some(encoder) = &mut encoder {
-                // Encode frame
-                if let Some(packet) = encoder.encode(&frame)? {
-                    tx.send(EncodedPacket(packet, start)).unwrap();
+            match source.next() {
+                Some(Err(e)) => {
+                    return Err(e);
                 }
+                Some(Ok(packet)) => {
+                    tx.send(packet).unwrap();
+                }
+                None => break,
             }
         }
+        Ok(())
     });
 
     tokio::select! {
