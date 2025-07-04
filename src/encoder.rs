@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use ffmpeg::ffi::AVCodecContext;
 use ffmpeg::{codec::Context as CodecContext, encoder::Video, Frame, Packet};
-use ffmpeg_next as ffmpeg;
+use ffmpeg_next::{self as ffmpeg};
 use log::info;
 use std::{
     collections::HashMap,
@@ -9,7 +9,7 @@ use std::{
 };
 
 pub struct Encoder {
-    encoder: Video,
+    pub(crate) encoder: Video,
     dimensions: (u32, u32),
 }
 
