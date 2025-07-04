@@ -148,7 +148,10 @@ async fn stream(url: String, token: Option<String>) -> Result<()> {
     Ok(())
 }
 
-async fn whip_handler(tx: mpsc::Sender<ffmpeg_next::frame::Video>, offer: String) -> Response<String> {
+async fn whip_handler(
+    tx: mpsc::Sender<ffmpeg_next::frame::Video>,
+    offer: String,
+) -> Response<String> {
     let answer = whip::subscribe_as_server(tx, offer);
     Response::builder()
         .status(201)
@@ -159,7 +162,10 @@ async fn whip_handler(tx: mpsc::Sender<ffmpeg_next::frame::Video>, offer: String
 
 async fn play_whip() {
     println!("Listening for WHIP Requests on 0.0.0.0:1337");
-    let (tx, rx): (mpsc::Sender<ffmpeg_next::frame::Video>, mpsc::Receiver<ffmpeg_next::frame::Video>) = mpsc::channel();
+    let (tx, rx): (
+        mpsc::Sender<ffmpeg_next::frame::Video>,
+        mpsc::Receiver<ffmpeg_next::frame::Video>,
+    ) = mpsc::channel();
 
     tokio::task::spawn(async move {
         axum::serve(
@@ -174,7 +180,10 @@ async fn play_whip() {
 }
 
 async fn play_whep(url: String, token: Option<String>) -> Result<()> {
-    let (tx, rx): (mpsc::Sender<ffmpeg_next::frame::Video>, mpsc::Receiver<ffmpeg_next::frame::Video>) = mpsc::channel();
+    let (tx, rx): (
+        mpsc::Sender<ffmpeg_next::frame::Video>,
+        mpsc::Receiver<ffmpeg_next::frame::Video>,
+    ) = mpsc::channel();
 
     whip::subscribe_as_client(tx, &url, token).await;
     render_video(rx);
