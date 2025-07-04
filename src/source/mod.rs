@@ -13,16 +13,16 @@ mod avfoundation;
 
 pub struct EncodedPacket(pub Packet, pub Instant);
 
-pub trait Source {
-    fn get_frame(&mut self) -> Result<Video>;
+#[derive(Debug, Clone)]
+pub enum CaptureSource {
+    AVFoundation,
 }
 
-#[cfg(target_os = "windows")]
-pub fn init_source(c: &CaptureSourceConfig) -> Result<impl Source> {
-    dxdup::DisplayDuplicator::new()
-}
-
-#[cfg(target_os = "macos")]
-pub fn init_source(c: &CaptureSourceConfig) -> Result<impl Source> {
-    todo!()
+pub fn init_capture_source(
+    src: CaptureSource,
+) -> Result<impl Iterator<Item = Result<EncodedPacket>>> {
+    #[cfg(target_os = "macos")]
+    return avfoundation::AFScreenCapturer::new();
+    #[cfg(target_os = "windows")]
+    return dxdup::DisplayDuplicator::new();
 }
