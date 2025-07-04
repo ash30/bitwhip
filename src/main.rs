@@ -23,6 +23,7 @@ pub static NvOptimusEnablement: i32 = 1;
 #[no_mangle]
 pub static AmdPowerXpressRequestHighPerformance: i32 = 1;
 
+#[cfg(target_os = "windows")]
 fn create_encoder(width: u32, height: u32, hw_frames: *mut AVBufferRef) -> Result<Encoder> {
     let encoder = Encoder::new(
         "h264_nvenc",
