@@ -1,13 +1,14 @@
+use std::time::Instant;
+
 use anyhow::Result;
-use ffmpeg_next::frame::video::Video;
+use ffmpeg_next::{frame::video::Video, Packet};
 
 #[cfg(target_os = "windows")]
 mod dxdup;
 
 // ==========
 
-#[derive(Debug, Clone, Default)]
-pub struct CaptureSourceConfig {}
+pub struct EncodedPacket(pub Packet, pub Instant);
 
 pub trait Source {
     fn get_frame(&mut self) -> Result<Video>;

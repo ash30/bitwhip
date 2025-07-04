@@ -3,14 +3,10 @@ use anyhow::{Error, Result};
 use axum::{response::Response, routing::post, Router};
 use clap::{Parser, Subcommand};
 use encoder::Encoder;
-use ffmpeg_next::{
-    ffi::{av_buffer_ref, AVBufferRef},
-    format::Pixel,
-    Packet, Rational,
-};
+use ffmpeg_next::ffi::{av_buffer_ref, AVBufferRef};
 use log::LevelFilter;
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
-use source::{CaptureSourceConfig, Source};
+use source::{init_capture_source, CaptureSource};
 use std::{collections::HashMap, sync::mpsc, time::Instant};
 
 mod client;
@@ -19,7 +15,8 @@ mod player;
 mod source;
 mod whip;
 
-struct EncodedPacket(Packet, Instant);
+//struct EncodedPacket(Packet, Instant);
+pub use source::EncodedPacket;
 
 #[no_mangle]
 pub static NvOptimusEnablement: i32 = 1;
