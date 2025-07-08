@@ -1,7 +1,7 @@
 use crate::player::render_video;
 use anyhow::{Error, Result};
 use axum::{response::Response, routing::post, Router};
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use log::LevelFilter;
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use source::init_capture_source;
@@ -17,6 +17,32 @@ mod whip;
 pub static NvOptimusEnablement: i32 = 1;
 #[no_mangle]
 pub static AmdPowerXpressRequestHighPerformance: i32 = 1;
+
+#[derive(Debug, Clone, Args)]
+struct SourceConfig {
+    /// Target frames per second for capture device
+    #[arg(short, long, default_value_t = 60)]
+    framerate: i32,
+    /// Device(s) to capture, source specific
+    #[arg(short, long)]
+    device: Option<String>,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum CaptureMethod {
+    AVFoundation,
+    DXGI,
+}
+
+impl Default for CaptureMethod {
+    fn default() -> Self {
+        #[cfg(target_os = "windows")]
+        return CaptureMethod::DXGI;
+        #[cfg(target_os = "macos")]
+        return CaptureMethod::AVFoundation;
+        panic!("unsupported platform")
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "bitwhip")]
@@ -37,6 +63,13 @@ enum Commands {
     Stream {
         /// The WHIP URL
         url: String,
+
+        /// Capture method
+        #[clap(short, value_enum, default_value_t=CaptureMethod::default())]
+        capture_method: CaptureMethod,
+
+        #[command(flatten)]
+        config: SourceConfig,
 
         /// The WHIP bearer token
         token: Option<String>,
@@ -76,7 +109,12 @@ async fn main() -> Result<(), Error> {
     )?;
 
     match args.commands {
-        Commands::Stream { url, token } => stream(url, token).await?,
+        Commands::Stream {
+            url,
+            token,
+            capture_method,
+            config,
+        } => stream(url, token, capture_method, config).await?,
         Commands::PlayWHIP {} => play_whip().await,
         Commands::PlayWHEP { url, token } => play_whep(url, token).await?,
     }
@@ -84,11 +122,16 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn stream(url: String, token: Option<String>) -> Result<()> {
+async fn stream(
+    url: String,
+    token: Option<String>,
+    src: CaptureMethod,
+    config: SourceConfig,
+) -> Result<()> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
     let join_handle = tokio::task::spawn_blocking(move || -> Result<()> {
-        let mut source = init_capture_source(source::CaptureSource::AVFoundation)?;
+        let mut source = init_capture_source(src, config)?;
         loop {
             match source.next() {
                 Some(Err(e)) => {

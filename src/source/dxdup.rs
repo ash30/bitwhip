@@ -1,5 +1,5 @@
 use super::Source;
-use crate::encoder::Encoder;
+use crate::{encoder::Encoder, SourceConfig};
 use anyhow::{anyhow, Result};
 use ffmpeg_next::{
     filter::{self, Graph},
@@ -31,7 +31,7 @@ impl DisplayDuplicator {
 impl Source for DisplayDuplicator {
     type Output = Encoder<DisplayDuplicator>;
 
-    fn init_source() -> Result<Self::Output> {
+    fn init_source(config: &SourceConfig) -> Result<Self::Output> {
         let mut dd = DisplayDuplicator::new()?;
         let Some(Ok(frame)) = dd.next() else {
             return Err(anyhow!(""));
@@ -45,7 +45,7 @@ impl Source for DisplayDuplicator {
                 ("tune".into(), "ull".into()),
             ])),
             |encoder| {
-                let frame_rate = Rational::new(60, 1);
+                let frame_rate = Rational::new(config.framerate, 1);
                 encoder.set_width(frame.width());
                 encoder.set_height(frame.height());
                 encoder.set_time_base(frame_rate.invert());

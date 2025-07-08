@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::Source;
-use crate::encoder::Encoder;
+use crate::{encoder::Encoder, SourceConfig};
 
 use anyhow::{anyhow, Result};
 use ffmpeg_next::{
@@ -19,12 +19,12 @@ use ffmpeg_sys_next::EAGAIN;
 impl Source for AFScreenCapturer {
     type Output = Encoder<Self>;
 
-    fn init_source() -> Result<Self::Output> {
-        let src = AFScreenCapturer::new()?;
+    fn init_source(config: &SourceConfig) -> Result<Self::Output> {
+        let src = AFScreenCapturer::new(config)?;
         let width = src.decoder.width();
         let height = src.decoder.width();
         let aspect = src.decoder.aspect_ratio();
-        let framerate = Rational::new(30, 1);
+        let framerate = Rational::new(config.framerate, 1);
         let device_tbase = src
             .device
             .stream(0)
@@ -55,16 +55,18 @@ pub struct AFScreenCapturer {
 }
 
 impl AFScreenCapturer {
-    pub fn new() -> Result<Self> {
+    pub fn new(config: &SourceConfig) -> Result<Self> {
         let input = device::input::video()
             .find(|d| d.name() == "avfoundation")
             .ok_or(anyhow!("missing device"))?;
 
+        let framerate = format!("{}/1", config.framerate);
         let mut opts = Dictionary::new();
         opts.set("pixel_format", "uyvy422");
-        opts.set("frame_rate", "30/1");
+        opts.set("frame_rate", &framerate);
 
-        let device = format::open_with("2", &input, opts)?.input();
+        let device_index = config.device.clone().unwrap_or("1".to_string());
+        let device = format::open_with(&device_index, &input, opts)?.input();
 
         let dec_ctx = Context::from_parameters(device.stream(0).unwrap().parameters())?;
         let decoder = dec_ctx.decoder().video()?;
