@@ -1,37 +1,38 @@
 use anyhow::{anyhow, bail, Context, Result};
 use ffmpeg::ffi::AVCodecContext;
-use ffmpeg::{codec::Context as CodecContext, encoder::Video, Frame, Packet};
-use ffmpeg_next::{self as ffmpeg};
+use ffmpeg::{codec::Context as CodecContext, encoder::Video, Error, Frame, Packet};
+use ffmpeg_next::{self as ffmpeg, frame};
 use log::info;
+use std::time::Instant;
 use std::{
     collections::HashMap,
     ffi::{c_void, CString},
 };
 
-pub struct Encoder {
-    pub(crate) encoder: Video,
-    dimensions: (u32, u32),
+use crate::EncodedPacket;
+use ffmpeg_sys_next::EAGAIN;
+
+pub struct Encoder<T> {
+    src: T,
+    encoder: Video,
 }
 
-impl Encoder {
+impl<T> Encoder<T> {
     pub fn new<F>(
+        mut src: T,
         encoder: &str,
         encoder_options: Option<HashMap<String, String>>,
         setting_func: F,
-    ) -> Result<Self>
+    ) -> Result<Encoder<T>>
     where
         F: FnOnce(&mut ffmpeg::encoder::video::Video) -> Result<()>,
     {
         let codec = ffmpeg::encoder::find_by_name(encoder)
             .ok_or_else(|| anyhow!("Missing encoder {}", encoder))?;
-
         let codec_context = CodecContext::new_with_codec(codec);
-
         let mut encoder = codec_context.encoder().video()?;
 
         setting_func(&mut encoder)?;
-
-        let dimensions = (encoder.width(), encoder.height());
 
         if let Some(encoder_options) = encoder_options {
             for (key, value) in encoder_options.iter() {
@@ -41,20 +42,20 @@ impl Encoder {
         }
 
         Ok(Encoder {
+            src,
             encoder: encoder.open()?,
-            dimensions,
         })
     }
 
-    pub fn encode(&mut self, frame: &Frame) -> Result<Option<Packet>> {
-        self.encoder.send_frame(frame)?;
+    pub fn height(&self) -> u32 {
+        self.encoder.height()
+    }
 
-        let mut packet = Packet::empty();
-        if self.encoder.receive_packet(&mut packet).is_ok() {
-            return Ok(Some(packet));
-        }
-
-        Ok(None)
+    pub fn width(&self) -> u32 {
+        self.encoder.width()
+    }
+    pub fn dimensions(&self) -> (u32, u32) {
+        return (self.height(), self.width());
     }
 
     unsafe fn set_option(context: *mut AVCodecContext, name: &str, val: &str) -> Result<()> {
@@ -71,8 +72,30 @@ impl Encoder {
         }
         Ok(())
     }
+}
 
-    pub fn dimensions(&self) -> (u32, u32) {
-        return self.dimensions;
+impl<T> Iterator for Encoder<T>
+where
+    T: Iterator<Item = Result<frame::Video>>,
+{
+    type Item = Result<EncodedPacket>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut packet = Packet::empty();
+        loop {
+            match self.encoder.receive_packet(&mut packet) {
+                Ok(_) => return Some(Ok(EncodedPacket(packet, Instant::now()))),
+                Err(Error::Other { errno }) if errno == EAGAIN => {}
+                Err(e) => return Some(Err(e.into())),
+            };
+            let next_frame = match self.src.next()? {
+                Err(e) => return Some(Err(e)),
+                Ok(f) => f,
+            };
+
+            if let Err(e) = self.encoder.send_frame(&next_frame) {
+                return Some(Err(e.into()));
+            }
+        }
     }
 }

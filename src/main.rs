@@ -34,10 +34,6 @@ fn create_encoder(width: u32, height: u32, hw_frames: *mut AVBufferRef) -> Resul
         |encoder| {
             let frame_rate = Rational::new(60, 1);
             encoder.set_bit_rate(5000 * 1000);
-            encoder.set_width(width);
-            encoder.set_height(height);
-            encoder.set_time_base(frame_rate.invert());
-            encoder.set_frame_rate(Some(frame_rate));
             encoder.set_gop(120);
             encoder.set_max_b_frames(0);
             encoder.set_format(Pixel::D3D11);
