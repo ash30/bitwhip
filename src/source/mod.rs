@@ -1,13 +1,10 @@
 use std::time::Instant;
 
 use anyhow::Result;
-use ffmpeg_next::{frame::video::Video, Packet, Rational};
+use ffmpeg_next::Packet;
 
-#[cfg(target_os = "windows")]
-mod dxdup;
-
-#[cfg(target_os = "macos")]
 mod avfoundation;
+mod dxdup;
 
 // ==========
 
@@ -31,5 +28,7 @@ pub fn init_capture_source(
         avfoundation::AFScreenCapturer::init_source()
     }
     #[cfg(target_os = "windows")]
-    return dxdup::DisplayDuplicator::new();
+    {
+        dxdup::DisplayDuplicator::init_source()
+    }
 }

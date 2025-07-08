@@ -2,12 +2,10 @@ use crate::player::render_video;
 use anyhow::{Error, Result};
 use axum::{response::Response, routing::post, Router};
 use clap::{Parser, Subcommand};
-use encoder::Encoder;
-use ffmpeg_next::ffi::{av_buffer_ref, AVBufferRef};
 use log::LevelFilter;
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
-use source::{init_capture_source, CaptureSource};
-use std::{collections::HashMap, sync::mpsc, time::Instant};
+use source::init_capture_source;
+use std::sync::mpsc;
 
 mod client;
 mod encoder;
@@ -15,39 +13,10 @@ mod player;
 mod source;
 mod whip;
 
-//struct EncodedPacket(Packet, Instant);
-pub use source::EncodedPacket;
-
 #[no_mangle]
 pub static NvOptimusEnablement: i32 = 1;
 #[no_mangle]
 pub static AmdPowerXpressRequestHighPerformance: i32 = 1;
-
-#[cfg(target_os = "windows")]
-fn create_encoder(width: u32, height: u32, hw_frames: *mut AVBufferRef) -> Result<Encoder> {
-    let encoder = Encoder::new(
-        "h264_nvenc",
-        Some(HashMap::from([
-            ("preset".into(), "p6".into()),
-            ("tune".into(), "ull".into()),
-        ])),
-        |encoder| {
-            let frame_rate = Rational::new(60, 1);
-            encoder.set_bit_rate(5000 * 1000);
-            encoder.set_gop(120);
-            encoder.set_max_b_frames(0);
-            encoder.set_format(Pixel::D3D11);
-            unsafe {
-                let encoder = &mut *encoder.as_mut_ptr();
-                encoder.hw_frames_ctx = av_buffer_ref(hw_frames);
-            }
-
-            Ok(())
-        },
-    )?;
-
-    Ok(encoder)
-}
 
 #[derive(Parser)]
 #[command(name = "bitwhip")]

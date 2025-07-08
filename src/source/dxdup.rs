@@ -1,9 +1,13 @@
 use super::Source;
+use crate::encoder::Encoder;
 use anyhow::{anyhow, Result};
 use ffmpeg_next::{
     filter::{self, Graph},
-    frame,
+    format::Pixel,
+    frame, Rational,
 };
+use ffmpeg_sys_next::av_buffer_ref;
+use std::collections::HashMap;
 
 pub struct DisplayDuplicator {
     graph: Graph,
@@ -25,10 +29,52 @@ impl DisplayDuplicator {
 }
 
 impl Source for DisplayDuplicator {
-    fn get_frame(&mut self) -> Result<frame::Video> {
-        let mut frame = frame::Video::empty();
-        self.graph.get("out").unwrap().sink().frame(&mut frame)?;
+    type Output = Encoder<DisplayDuplicator>;
 
-        Ok(frame)
+    fn init_source() -> Result<Self::Output> {
+        let mut dd = DisplayDuplicator::new()?;
+        let Some(Ok(frame)) = dd.next() else {
+            return Err(anyhow!(""));
+        };
+
+        let encoder = Encoder::new(
+            dd,
+            "h264_nvenc",
+            Some(HashMap::from([
+                ("preset".into(), "p6".into()),
+                ("tune".into(), "ull".into()),
+            ])),
+            |encoder| {
+                let frame_rate = Rational::new(60, 1);
+                encoder.set_width(frame.width());
+                encoder.set_height(frame.height());
+                encoder.set_time_base(frame_rate.invert());
+                encoder.set_frame_rate(Some(frame_rate));
+                encoder.set_bit_rate(5000 * 1000);
+                encoder.set_gop(120);
+                encoder.set_max_b_frames(0);
+                encoder.set_format(Pixel::D3D11);
+                unsafe {
+                    let encoder = &mut *encoder.as_mut_ptr();
+                    let hw_frames = (*frame.as_ptr()).hw_frames_ctx;
+                    encoder.hw_frames_ctx = av_buffer_ref(hw_frames);
+                }
+                Ok(())
+            },
+        )?;
+
+        Ok(encoder)
+    }
+}
+
+impl Iterator for DisplayDuplicator {
+    type Item = Result<frame::Video>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut frame = frame::Video::empty();
+        if let Err(e) = self.graph.get("out").unwrap().sink().frame(&mut frame) {
+            return Some(Err(e.into()));
+        };
+        Some(Ok(frame))
     }
 }

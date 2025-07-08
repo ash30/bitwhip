@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use ffmpeg::ffi::AVCodecContext;
-use ffmpeg::{codec::Context as CodecContext, encoder::Video, Error, Frame, Packet};
+use ffmpeg::{codec::Context as CodecContext, encoder::Video, Error, Packet};
 use ffmpeg_next::{self as ffmpeg, frame};
 use log::info;
 use std::time::Instant;
@@ -9,7 +9,7 @@ use std::{
     ffi::{c_void, CString},
 };
 
-use crate::EncodedPacket;
+use crate::source::EncodedPacket;
 use ffmpeg_sys_next::EAGAIN;
 
 pub struct Encoder<T> {

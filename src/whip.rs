@@ -1,5 +1,5 @@
 use crate::client::{Client, WebrtcEvent};
-use crate::EncodedPacket;
+use crate::source::EncodedPacket;
 use bytes::Bytes;
 use ffmpeg_next;
 use futures::executor;
