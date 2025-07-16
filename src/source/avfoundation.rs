@@ -22,7 +22,7 @@ impl Source for AFScreenCapturer {
     fn init_source(config: &SourceConfig) -> Result<Self::Output> {
         let src = AFScreenCapturer::new(config)?;
         let width = src.decoder.width();
-        let height = src.decoder.width();
+        let height = src.decoder.height();
         let aspect = src.decoder.aspect_ratio();
         let framerate = Rational::new(config.framerate, 1);
         let device_tbase = src
