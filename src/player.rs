@@ -1,19 +1,35 @@
+use objc2::MainThreadMarker;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::PixelFormatEnum;
+use sdl2::video::WindowBuilder;
+use sdl2::VideoSubsystem;
 use std::io::Write;
 use std::sync::mpsc;
 use tracing::error;
+
+fn create_window(s: VideoSubsystem, height: u32, width: u32) -> WindowBuilder {
+    let title = "bitwhip";
+
+    #[cfg(target_os = "macos")]
+    {
+        let mtm = MainThreadMarker::new().expect("should be called main thread");
+        let win = objc2_app_kit::NSScreen::mainScreen(mtm);
+        let scale = win.unwrap().backingScaleFactor() as u32;
+        let mut window = s.window(title, width / scale, height / scale);
+        window.allow_highdpi();
+        return window;
+    }
+    return s.window(title, width, height);
+}
 
 pub fn render_video(rx: mpsc::Receiver<ffmpeg_next::frame::Video>) {
     match rx.recv() {
         Ok(first_frame) => {
             let sdl_context = sdl2::init().unwrap();
             let video_subsystem = sdl_context.video().unwrap();
-            let window = video_subsystem
-                .window("bitwhip", first_frame.width() / 2, first_frame.height() / 2)
+            let window = create_window(video_subsystem, first_frame.height(), first_frame.width())
                 .position_centered()
-                .allow_highdpi()
                 .build()
                 .unwrap();
 
