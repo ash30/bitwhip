@@ -1,17 +1,14 @@
 use crate::player::render_video;
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Error, Result};
 use axum::{response::Response, routing::post, Router};
-use clap::{Parser, Subcommand};
-use encoder::Encoder;
-use ffmpeg_next::{
-    ffi::{av_buffer_ref, AVBufferRef},
-    format::Pixel,
-    Packet, Rational,
-};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use encoder::{EncodedPacket, EncoderBuilder};
+use ffmpeg_next::{frame, Rational};
 use log::LevelFilter;
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
-use source::Source;
-use std::{collections::HashMap, sync::mpsc, time::Instant};
+use source::{AFScreenCapturer, DisplayDuplicator, Source};
+use std::{sync::mpsc, time::Instant};
+use tokio::{sync::mpsc::UnboundedReceiver, task::JoinHandle};
 
 mod client;
 mod encoder;
@@ -19,40 +16,35 @@ mod player;
 mod source;
 mod whip;
 
-struct EncodedPacket(Packet, Instant);
-
 #[no_mangle]
 pub static NvOptimusEnablement: i32 = 1;
 #[no_mangle]
 pub static AmdPowerXpressRequestHighPerformance: i32 = 1;
 
-fn create_encoder(width: u32, height: u32, hw_frames: *mut AVBufferRef) -> Result<Encoder> {
-    let encoder = Encoder::new(
-        "h264_nvenc",
-        Some(HashMap::from([
-            ("preset".into(), "p6".into()),
-            ("tune".into(), "ull".into()),
-        ])),
-        |encoder| {
-            let frame_rate = Rational::new(60, 1);
-            encoder.set_bit_rate(5000 * 1000);
-            encoder.set_width(width);
-            encoder.set_height(height);
-            encoder.set_time_base(frame_rate.invert());
-            encoder.set_frame_rate(Some(frame_rate));
-            encoder.set_gop(120);
-            encoder.set_max_b_frames(0);
-            encoder.set_format(Pixel::D3D11);
-            unsafe {
-                let encoder = &mut *encoder.as_mut_ptr();
-                encoder.hw_frames_ctx = av_buffer_ref(hw_frames);
-            }
+#[derive(Debug, Clone, Args)]
+struct SourceConfig {
+    /// Target frames per second for capture device
+    #[arg(short, long, default_value_t = 60)]
+    framerate: i32,
+    /// Device(s) to capture, source specific
+    #[arg(short, long)]
+    device: Option<String>,
+}
 
-            Ok(())
-        },
-    )?;
+#[derive(Debug, Clone, ValueEnum)]
+pub enum CaptureMethod {
+    AVFoundation,
+    DXGI,
+}
 
-    Ok(encoder)
+impl Default for CaptureMethod {
+    fn default() -> Self {
+        #[cfg(target_os = "windows")]
+        return CaptureMethod::DXGI;
+        #[cfg(target_os = "macos")]
+        return CaptureMethod::AVFoundation;
+        panic!("unsupported platform")
+    }
 }
 
 #[derive(Parser)]
@@ -74,6 +66,13 @@ enum Commands {
     Stream {
         /// The WHIP URL
         url: String,
+
+        /// Capture method
+        #[clap(short, value_enum, default_value_t=CaptureMethod::default())]
+        capture_method: CaptureMethod,
+
+        #[command(flatten)]
+        config: SourceConfig,
 
         /// The WHIP bearer token
         token: Option<String>,
@@ -113,7 +112,12 @@ async fn main() -> Result<(), Error> {
     )?;
 
     match args.commands {
-        Commands::Stream { url, token } => stream(url, token).await?,
+        Commands::Stream {
+            url,
+            token,
+            capture_method,
+            config,
+        } => stream(url, token, capture_method, config).await?,
         Commands::PlayWHIP {} => play_whip().await,
         Commands::PlayWHEP { url, token } => play_whep(url, token).await?,
     }
@@ -121,56 +125,67 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn stream(url: String, token: Option<String>) -> Result<()> {
+async fn stream(
+    url: String,
+    token: Option<String>,
+    src: CaptureMethod,
+    config: SourceConfig,
+) -> Result<()> {
+    let (handle, rx) = match src {
+        #[cfg(target_os = "macos")]
+        CaptureMethod::AVFoundation => _stream(AFScreenCapturer::new(&config)?, &config),
+        #[cfg(target_os = "windows")]
+        CaptureMethod::DXGI => _stream(DisplayDuplicator::new()?, &config),
+        _ => Err(anyhow!("unsupported on this platform"))?,
+    };
+
+    tokio::select! {
+        _ = whip::publish(&url, token, rx) => {},
+        res = handle => {
+            res??
+        }
+    }
+    Ok(())
+}
+
+fn _stream<T>(
+    mut source: T,
+    config: &SourceConfig,
+) -> (JoinHandle<Result<()>>, UnboundedReceiver<EncodedPacket>)
+where
+    T: Source + Send + 'static,
+{
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-
+    let frame_rate = Rational::new(config.framerate, 1);
     let join_handle = tokio::task::spawn_blocking(move || -> Result<()> {
-        let mut encoder: Option<Encoder> = None;
-        let mut source: Box<dyn Source + Send + Sync> =
-            Box::new(source::dxdup::DisplayDuplicator::new()?);
+        let mut encoder = EncoderBuilder::new()
+            .for_source(&mut source)
+            .customise(move |encoder| {
+                encoder.set_frame_rate(Some(frame_rate));
+                encoder.set_time_base(frame_rate.invert());
+                encoder.set_gop(120);
+                encoder.set_max_b_frames(0);
+            })
+            .open()?;
 
-        let ensure_encoder = |encoder: &mut Option<Encoder>,
-                              width: u32,
-                              height: u32,
-                              hw_frames: *mut AVBufferRef|
-         -> Result<()> {
-            if let Some(enc) = encoder {
-                if enc.dimensions() != (width, height) {
-                    encoder.replace(create_encoder(width, height, hw_frames)?);
-                }
-            } else {
-                encoder.replace(create_encoder(width, height, hw_frames)?);
-            }
-
-            Ok(())
-        };
         let start = Instant::now();
+        let mut frame = frame::Video::empty();
         loop {
             // Pull frame from duplicator
-            let frame = source.get_frame()?;
-            let hw_frames = unsafe { (*frame.as_ptr()).hw_frames_ctx };
-            // Fetch encoder or create it
-            ensure_encoder(&mut encoder, frame.width(), frame.height(), hw_frames)?;
-            if let Some(encoder) = &mut encoder {
-                // Encode frame
-                if let Some(packet) = encoder.encode(&frame)? {
-                    tx.send(EncodedPacket(packet, start)).unwrap();
-                }
+            source.next_frame(&mut frame)?;
+            if let Some(packet) = encoder::encode(&mut encoder, &frame)? {
+                tx.send(EncodedPacket(packet, start)).unwrap();
             }
         }
     });
 
-    tokio::select! {
-        _ = whip::publish(&url, token, rx) => {},
-        res = join_handle => {
-            res??
-        }
-    }
-
-    Ok(())
+    (join_handle, rx)
 }
 
-async fn whip_handler(tx: mpsc::Sender<ffmpeg_next::frame::Video>, offer: String) -> Response<String> {
+async fn whip_handler(
+    tx: mpsc::Sender<ffmpeg_next::frame::Video>,
+    offer: String,
+) -> Response<String> {
     let answer = whip::subscribe_as_server(tx, offer);
     Response::builder()
         .status(201)

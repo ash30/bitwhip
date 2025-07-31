@@ -2,7 +2,7 @@ use super::Source;
 use anyhow::{anyhow, Result};
 use ffmpeg_next::{
     filter::{self, Graph},
-    frame,
+    frame, Error,
 };
 
 pub struct DisplayDuplicator {
@@ -25,10 +25,11 @@ impl DisplayDuplicator {
 }
 
 impl Source for DisplayDuplicator {
-    fn get_frame(&mut self) -> Result<frame::Video> {
-        let mut frame = frame::Video::empty();
-        self.graph.get("out").unwrap().sink().frame(&mut frame)?;
-
-        Ok(frame)
+    fn hw_support(&self) -> bool {
+        true
+    }
+    fn next_frame(&mut self, out: &mut frame::Video) -> std::result::Result<(), Error> {
+        self.graph.get("out").unwrap().sink().frame(out)?;
+        Ok(())
     }
 }

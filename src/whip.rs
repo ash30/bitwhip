@@ -1,7 +1,8 @@
-use crate::client::{Client, WebrtcEvent};
-use crate::EncodedPacket;
+use crate::{
+    client::{Client, WebrtcEvent},
+    encoder::EncodedPacket,
+};
 use bytes::Bytes;
-use ffmpeg_next;
 use futures::executor;
 use std::{sync::mpsc, time::Instant};
 use str0m::media::Direction as RtcDirection;
