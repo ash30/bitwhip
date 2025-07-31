@@ -40,7 +40,7 @@ pub async fn publish(
                     match packet {
                         Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
                         Ok(packet) => {
-                            let pts = Instant::now() - packet.1;
+                            let pts = packet.1;
                             if let Some(data) = packet.0.data() {
                                 client
                                     .send_video(Bytes::copy_from_slice(data), pts)

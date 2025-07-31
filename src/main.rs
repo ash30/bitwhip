@@ -2,7 +2,7 @@ use crate::player::render_video;
 use anyhow::{anyhow, Error, Result};
 use axum::{response::Response, routing::post, Router};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use encoder::{EncodedPacket, EncoderBuilder};
+use encoder::{EncodedPacket, EncodedPacketIter, EncoderBuilder};
 use ffmpeg_next::{frame, Rational};
 use log::LevelFilter;
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
@@ -158,7 +158,7 @@ where
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let frame_rate = Rational::new(config.framerate, 1);
     let join_handle = tokio::task::spawn_blocking(move || -> Result<()> {
-        let mut encoder = EncoderBuilder::new()
+        let encoder = EncoderBuilder::new()
             .for_source(&mut source)
             .customise(move |encoder| {
                 encoder.set_frame_rate(Some(frame_rate));
@@ -168,15 +168,19 @@ where
             })
             .open()?;
 
-        let start = Instant::now();
-        let mut frame = frame::Video::empty();
+        let mut iter = EncodedPacketIter::new(encoder, source);
         loop {
-            // Pull frame from duplicator
-            source.next_frame(&mut frame)?;
-            if let Some(packet) = encoder::encode(&mut encoder, &frame)? {
-                tx.send(EncodedPacket(packet, start)).unwrap();
+            match iter.next() {
+                Some(Err(e)) => {
+                    return Err(e);
+                }
+                Some(Ok(packet)) => {
+                    tx.send(packet).unwrap();
+                }
+                None => break,
             }
         }
+        Ok(())
     });
 
     (join_handle, rx)
