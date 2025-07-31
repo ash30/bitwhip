@@ -7,14 +7,16 @@ use ffmpeg::{
 use ffmpeg_next::{self as ffmpeg};
 use ffmpeg_sys_next::{av_buffer_ref, AVBufferRef, EAGAIN};
 use log::info;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 use std::{
     collections::HashMap,
     ffi::{c_void, CString},
 };
 
-use crate::source::Source;
+use crate::source::{self, Output, PollSource, Source};
 
-pub struct EncodedPacket(pub Packet, pub Instant);
+pub struct EncodedPacket(pub Packet, pub source::Delta);
 
 // Simple Type Wrapper to organise enc preset and name
 pub struct Codec(String);
@@ -145,5 +147,67 @@ impl EncoderBuilder {
             bail!("set_option failed: {retval}");
         }
         Ok(())
+    }
+}
+
+// An iterator to simplify integration between source and encoder
+pub struct EncodedPacketIter<T> {
+    source: PollSource<T>,
+    encoder: VideoEncoderOpened,
+    frame_next: frame::Video,
+    frame_timestamp: Duration,
+}
+
+impl<T> EncodedPacketIter<T> {
+    pub fn new(encoder: VideoEncoderOpened, source: T) -> Self {
+        let target_fps = encoder.frame_rate();
+        Self {
+            encoder,
+            source: PollSource::new(source, target_fps, Instant::now()),
+            frame_next: frame::Video::empty(),
+            frame_timestamp: Duration::new(0, 0),
+        }
+    }
+}
+
+impl<T> Iterator for EncodedPacketIter<T>
+where
+    T: Source,
+{
+    type Item = Result<EncodedPacket>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut p = Packet::empty();
+        loop {
+            // drain packets from encoder
+            match self.encoder.receive_packet(&mut p) {
+                // Reuse timestamp for all frame packets
+                Ok(_) => return Some(Ok(EncodedPacket(p, self.frame_timestamp))),
+                Err(Error::Other { errno }) if errno == EAGAIN => {}
+                Err(e) => return Some(Err(e.into())),
+            }
+
+            // get next frame since encoder is empty
+            loop {
+                let now = Instant::now();
+                match self.source.next(now, &mut self.frame_next) {
+                    Output::Complete => return None,
+                    Output::Item(Ok(_), time_delta) => {
+                        // We will use simple sys time delta for rtp timestamp
+                        self.frame_timestamp = time_delta;
+                        break;
+                    }
+                    Output::Item(Err(e), _) => return Some(Err(e.into())),
+                    Output::Pending(d) => {
+                        sleep(d);
+                        continue;
+                    }
+                };
+            }
+
+            if let Err(e) = self.encoder.send_frame(&self.frame_next) {
+                return Some(Err(e.into()));
+            }
+        }
     }
 }
