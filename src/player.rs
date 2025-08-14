@@ -1,4 +1,3 @@
-use objc2::MainThreadMarker;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::PixelFormatEnum;
@@ -13,7 +12,7 @@ fn create_window(s: VideoSubsystem, height: u32, width: u32) -> WindowBuilder {
 
     #[cfg(target_os = "macos")]
     {
-        let mtm = MainThreadMarker::new().expect("should be called main thread");
+        let mtm = objc2::MainThreadMarker::new().expect("should be called main thread");
         let win = objc2_app_kit::NSScreen::mainScreen(mtm);
         let scale = win.unwrap().backingScaleFactor() as u32;
         let mut window = s.window(title, width / scale, height / scale);
