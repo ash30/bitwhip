@@ -3,16 +3,7 @@ fn main() {
 
     match target_os.as_str() {
         "macos" | "ios" => {}
-        "linux" => {
-            println!(
-                "cargo:rustc-link-search={}/lib/amd64",
-                std::env::var("FFMPEG_DIR").expect("FFMPEG_DIR")
-            );
-            println!(
-                "cargo:rustc-link-search={}/lib",
-                std::env::var("FFMPEG_DIR").expect("FFMPEG_DIR")
-            );
-        }
+        "linux" => {}
         "windows" => {
             println!("cargo:rustc-link-arg=/EXPORT:NvOptimusEnablement");
             println!("cargo:rustc-link-arg=/EXPORT:AmdPowerXpressRequestHighPerformance");
