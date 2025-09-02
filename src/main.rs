@@ -132,11 +132,10 @@ async fn stream(
     config: SourceConfig,
 ) -> Result<()> {
     let (handle, rx) = match src {
-        #[cfg(target_os = "macos")]
         CaptureMethod::AVFoundation => _stream(AFScreenCapturer::new(&config)?, &config),
-        #[cfg(target_os = "windows")]
         CaptureMethod::DXGI => _stream(DisplayDuplicator::new()?, &config),
-        _ => Err(anyhow!("unsupported on this platform"))?,
+        //_ =>  return Err(anyhow!("unsupported on this platform")),
+        _ => panic!("unsupported capture_method for platform"),
     };
 
     tokio::select! {
@@ -200,7 +199,10 @@ async fn whip_handler(
 
 async fn play_whip() {
     println!("Listening for WHIP Requests on 0.0.0.0:1337");
-    let (tx, rx): (mpsc::Sender<ffmpeg_next::frame::Video>, mpsc::Receiver<ffmpeg_next::frame::Video>) = mpsc::channel();
+    let (tx, rx): (
+        mpsc::Sender<ffmpeg_next::frame::Video>,
+        mpsc::Receiver<ffmpeg_next::frame::Video>,
+    ) = mpsc::channel();
 
     tokio::task::spawn(async move {
         axum::serve(
@@ -215,7 +217,10 @@ async fn play_whip() {
 }
 
 async fn play_whep(url: String, token: Option<String>) -> Result<()> {
-    let (tx, rx): (mpsc::Sender<ffmpeg_next::frame::Video>, mpsc::Receiver<ffmpeg_next::frame::Video>) = mpsc::channel();
+    let (tx, rx): (
+        mpsc::Sender<ffmpeg_next::frame::Video>,
+        mpsc::Receiver<ffmpeg_next::frame::Video>,
+    ) = mpsc::channel();
 
     whip::subscribe_as_client(tx, &url, token).await;
     render_video(rx);
