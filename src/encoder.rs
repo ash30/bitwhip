@@ -27,6 +27,8 @@ impl Default for Codec {
         return Self("h264_videotoolbox".to_string());
         #[cfg(target_os = "windows")]
         return Self("h264_nvenc".to_string());
+        #[cfg(target_os = "linux")]
+        return todo!();
     }
 }
 
