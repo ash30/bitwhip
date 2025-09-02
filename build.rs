@@ -2,12 +2,7 @@ fn main() {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
 
     match target_os.as_str() {
-        "macos" | "ios" => {
-            println!(
-                "cargo:rustc-link-search={}/lib",
-                std::env::var("FFMPEG_DIR").expect("FFMPEG_DIR")
-            );
-        }
+        "macos" | "ios" => {}
         "linux" => {
             println!(
                 "cargo:rustc-link-search={}/lib/amd64",
