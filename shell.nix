@@ -1,4 +1,4 @@
-let pkgs = import (builtins.fetchTarball https://github.com/NixOS/nixpkgs/archive/nixos-unstable.tar.gz) {
+let pkgs = import (builtins.fetchTarball https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz) {
   config.allowUnfree = true; 
   overlays = [ 
     (import (fetchTarball "https://github.com/oxalica/rust-overlay/archive/master.tar.gz"))
@@ -6,10 +6,11 @@ let pkgs = import (builtins.fetchTarball https://github.com/NixOS/nixpkgs/archiv
 };
   rustc = pkgs.rust-bin.stable.latest.default.override { extensions = ["rust-src"];};
   cargo = pkgs.rust-bin.stable.latest.default;
+  rustPlatform = pkgs.makeRustPlatform { rustc = rustc; cargo = cargo;};
 in
 pkgs.mkShell {
   RUST_BACKTRACE = 1;
-  inputsFrom = [ (pkgs.callPackage ./default.nix {}) ];
+  inputsFrom = [ (pkgs.callPackage ./derivation.nix { rustPlatform = rustPlatform;}) ];
 
   buildInputs = [
     rustc
